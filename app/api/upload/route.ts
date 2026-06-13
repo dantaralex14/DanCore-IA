@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import pdfParse from "pdf-parse";
+// @ts-ignore
+const pdfParse = require('pdf-parse');
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 
@@ -44,7 +45,7 @@ export async function POST(req: NextRequest) {
       pages = parsed.numpages;
 
     } else if (fileType === "txt" || fileType === "csv") {
-  text = buffer.toString("utf-8");
+      text = buffer.toString("utf-8");
 
     } else if (fileType === "docx") {
       const result = await mammoth.extractRawText({ buffer });
