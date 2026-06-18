@@ -1,5 +1,5 @@
 "use client";
-
+import AuthModal from "./AuthModal";
 import { useState, useRef, useEffect } from "react";
 import { Send, Paperclip, Sun, Moon, ChevronDown, X } from "lucide-react";
 import Sidebar, { Chat } from "./Sidebar";
@@ -30,59 +30,101 @@ const FILE_BADGES: Record<string, { label: string; color: string }> = {
 };
 
 function createNewChat(): ChatData {
+  const now = new Date();
   return {
-    id: Date.now().toString(),
+    id: now.getTime().toString(),
     title: "Nuevo chat",
-    createdAt: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+    createdAt: now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
     messages: [{
       role: "model",
       content: "Hola, soy PersonaCore Assistant. ¿En qué puedo ayudarte hoy? Puedes subir un documento y hacerme preguntas sobre él.",
-      timestamp: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+      timestamp: now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
     }],
     pdfText: null,
     pdfName: null,
   };
 }
 
+// Estado inicial para SSR - sin acceso a window
+const getInitialChats = (): ChatData[] => {
+  return [createNewChat()];
+};
+
+const getInitialActiveChatId = (): string => {
+  return "";
+};
+
 export default function ChatInterface() {
   const [darkMode, setDarkMode] = useState(true);
-  const [chats, setChats] = useState<ChatData[]>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("personacore-chats");
-      return saved ? JSON.parse(saved) : [createNewChat()];
-    }
-    return [createNewChat()];
-  });
-  const [activeChatId, setActiveChatId] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("personacore-chats");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        return parsed[0]?.id || "";
-      }
-    }
-    return chats[0]?.id || "";
-  });
+  const [chats, setChats] = useState<ChatData[]>(getInitialChats);
+  const [activeChatId, setActiveChatId] = useState<string>(getInitialActiveChatId);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [fileType, setFileType] = useState<string | null>(null);
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
+  
+  // Estado unificado de autenticación - inicializado sin acceso a window
+  const [auth, setAuth] = useState<{ token: string | null; username: string | null }>({
+    token: null,
+    username: null
+  });
+  
+  const API_BACKEND = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
   const bottomRef = useRef<HTMLDivElement>(null);
   const chatBoxRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const activeChat = chats.find((c) => c.id === activeChatId) || chats[0];
 
-  // Guardar en localStorage
+  // Cargar datos desde localStorage solo en el cliente
   useEffect(() => {
-    localStorage.setItem("personacore-chats", JSON.stringify(chats));
-  }, [chats]);
+    setIsMounted(true);
+    
+    // Cargar chats
+    const savedChats = localStorage.getItem("personacore-chats");
+    if (savedChats) {
+      try {
+        const parsed = JSON.parse(savedChats);
+        setChats(parsed);
+        if (parsed.length > 0 && parsed[0]?.id) {
+          setActiveChatId(parsed[0].id);
+        }
+      } catch (e) {
+        console.error("Error parsing saved chats:", e);
+      }
+    }
+
+    // Cargar autenticación
+    const token = localStorage.getItem("dancore-token");
+    const username = localStorage.getItem("dancore-username");
+    if (token && username) {
+      setAuth({ token, username });
+    }
+  }, []);
+
+  // Guardar en localStorage cuando cambien los chats
+  useEffect(() => {
+    if (isMounted) {
+      localStorage.setItem("personacore-chats", JSON.stringify(chats));
+    }
+  }, [chats, isMounted]);
+
+  // Cargar chats del backend si hay sesión activa
+  useEffect(() => {
+    if (auth.token) {
+      loadChatsFromBackend(auth.token);
+    }
+  }, [auth.token]);
 
   // Scroll automático
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [activeChat?.messages, loading]);
+    if (isMounted) {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [activeChat?.messages, loading, isMounted]);
 
   // Detectar scroll para mostrar botón
   function handleScroll() {
@@ -95,9 +137,41 @@ export default function ChatInterface() {
     setChats((prev) =>
       prev.map((c) => (c.id === activeChatId ? { ...c, ...updates } : c))
     );
+
+    if (auth.token && updates.title && /^\d+$/.test(activeChatId)) {
+      fetch(`${API_BACKEND}/api/chats/${activeChatId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify({ title: updates.title }),
+      }).catch((err) => console.error("Error actualizando titulo:", err));
+    }
   }
 
-  function newChat() {
+  async function newChat() {
+    if (auth.token) {
+      try {
+        const res = await fetch(`${API_BACKEND}/api/chats/`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
+          body: JSON.stringify({ title: "Nuevo chat" }),
+        });
+        const data = await res.json();
+        const chat: ChatData = {
+          id: data.id.toString(),
+          title: data.title,
+          createdAt: new Date(data.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+          messages: [createNewChat().messages[0]],
+          pdfText: null,
+          pdfName: null,
+        };
+        setChats((prev) => [chat, ...prev]);
+        setActiveChatId(chat.id);
+        setFileType(null);
+        return;
+      } catch (err) {
+        console.error("Error creando chat:", err);
+      }
+    }
     const chat = createNewChat();
     setChats((prev) => [chat, ...prev]);
     setActiveChatId(chat.id);
@@ -122,6 +196,92 @@ export default function ChatInterface() {
     }
   }
 
+  // Función para cargar chats desde el backend
+  async function loadChatsFromBackend(authToken: string) {
+    try {
+      const res = await fetch(`${API_BACKEND}/api/chats/`, {
+        headers: { Authorization: `Bearer ${authToken}` },
+      });
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        const loadedChats: ChatData[] = await Promise.all(
+          data.map(async (c: { id: number; title: string; created_at: string }) => {
+            const msgRes = await fetch(`${API_BACKEND}/api/chats/${c.id}/messages`, {
+              headers: { Authorization: `Bearer ${authToken}` },
+            });
+            const msgData = await msgRes.json();
+            const messages: Message[] = msgData.map((m: { role: string; content: string; created_at: string }) => ({
+              role: m.role === "assistant" ? "model" : "user",
+              content: m.content,
+              timestamp: new Date(m.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+            }));
+            return {
+              id: c.id.toString(),
+              title: c.title,
+              createdAt: new Date(c.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+              messages: messages.length > 0 ? messages : [createNewChat().messages[0]],
+              pdfText: null,
+              pdfName: null,
+            };
+          })
+        );
+        setChats(loadedChats);
+        setActiveChatId(loadedChats[0].id);
+      } else {
+        const fresh = createNewChat();
+        setChats([fresh]);
+        setActiveChatId(fresh.id);
+      }
+    } catch (err) {
+      console.error("Error cargando chats:", err);
+    }
+  }
+
+  // Funciones de autenticación
+  async function handleAuthSuccess(token: string, username: string) {
+  setAuth({ token, username });
+  localStorage.setItem("dancore-token", token);
+  localStorage.setItem("dancore-username", username);
+  setShowAuth(false);
+
+  // Si el chat activo tiene mensajes reales (más de solo el saludo), migrarlo
+  const currentChat = chats.find((c) => c.id === activeChatId);
+  const hasRealContent = currentChat && currentChat.messages.length > 1;
+
+  if (hasRealContent) {
+    try {
+      const res = await fetch(`${API_BACKEND}/api/chats/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ title: currentChat.title }),
+      });
+      const data = await res.json();
+      const newChatId = data.id.toString();
+
+      for (const msg of currentChat.messages) {
+        await fetch(`${API_BACKEND}/api/chats/${newChatId}/messages`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ role: msg.role === "model" ? "assistant" : "user", content: msg.content }),
+        });
+      }
+    } catch (err) {
+      console.error("Error migrando chat:", err);
+    }
+  }
+
+  loadChatsFromBackend(token);
+}
+
+  function logout() {
+    setAuth({ token: null, username: null });
+    localStorage.removeItem("dancore-token");
+    localStorage.removeItem("dancore-username");
+    const fresh = createNewChat();
+    setChats([fresh]);
+    setActiveChatId(fresh.id);
+  }
+
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -130,14 +290,20 @@ export default function ChatInterface() {
     formData.append("file", file);
     try {
       const res = await fetch("/api/upload", { method: "POST", body: formData });
+      
+      if (!res.ok) {
+        throw new Error(`Error ${res.status}: ${res.statusText}`);
+      }
+      
       const data = await res.json();
       if (data.text) {
         const ext = file.name.split(".").pop()?.toLowerCase() || "file";
         setFileType(ext);
+        const now = new Date();
         const welcomeMsg: Message = {
           role: "model",
           content: `✅ Archivo cargado: **${data.filename}**. Ahora puedes hacerme preguntas sobre su contenido.`,
-          timestamp: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+          timestamp: now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
         };
         updateActiveChat({
           pdfText: data.text,
@@ -148,8 +314,9 @@ export default function ChatInterface() {
       } else {
         addMessage("model", `❌ Error: ${data.error || "No se pudo procesar el archivo"}`);
       }
-    } catch {
-      addMessage("model", "❌ Error de conexión al subir el archivo.");
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      addMessage("model", `❌ Error al subir el archivo: ${error instanceof Error ? error.message : "Error desconocido"}`);
     } finally {
       setUploading(false);
       if (fileRef.current) fileRef.current.value = "";
@@ -167,6 +334,15 @@ export default function ChatInterface() {
         c.id === activeChatId ? { ...c, messages: [...c.messages, msg] } : c
       )
     );
+
+    if (auth.token && /^\d+$/.test(activeChatId)) {
+      fetch(`${API_BACKEND}/api/chats/${activeChatId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${auth.token}` },
+        body: JSON.stringify({ role: role === "model" ? "assistant" : "user", content }),
+      }).catch((err) => console.error("Error guardando mensaje:", err));
+    }
+
     return msg;
   }
 
@@ -188,26 +364,53 @@ export default function ChatInterface() {
         content: m.content,
       }));
 
+      const headers: HeadersInit = { "Content-Type": "application/json" };
+      if (auth.token) {
+        headers["Authorization"] = `Bearer ${auth.token}`;
+      }
+
       const res = await fetch("/api/chat", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify({
           message: text,
           history,
           pdfText: activeChat.pdfText,
+          username: auth.username,
         }),
       });
 
+      if (!res.ok) {
+        throw new Error(`Error ${res.status}: ${res.statusText}`);
+      }
+
       const data = await res.json();
-      addMessage("model", data.reply || "Error al obtener respuesta.");
-    } catch {
-      addMessage("model", "Error de conexión.");
+      
+      if (!data.reply) {
+        throw new Error("Respuesta inválida del servidor");
+      }
+      
+      addMessage("model", data.reply);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      addMessage("model", `❌ Error al enviar mensaje: ${error instanceof Error ? error.message : "Error desconocido"}`);
     } finally {
       setLoading(false);
     }
   }
 
   const badge = fileType ? FILE_BADGES[fileType] : null;
+
+  // Evitar la hidratación mostrando un placeholder o nada durante el SSR
+  if (!isMounted) {
+    return (
+      <div className={`flex h-screen overflow-hidden ${darkMode ? "bg-zinc-900" : "bg-zinc-50"}`}>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="text-zinc-400">Cargando...</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`flex h-screen overflow-hidden ${darkMode ? "bg-zinc-900" : "bg-zinc-50"}`}>
@@ -248,14 +451,41 @@ export default function ChatInterface() {
               </div>
             )}
           </div>
-          <button
-            onClick={() => setDarkMode(!darkMode)}
-            className={`rounded-lg p-2 transition-colors ${
-              darkMode ? "text-zinc-400 hover:bg-zinc-800 hover:text-white" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-            }`}
-          >
-            {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-          </button>
+          
+          {/* AUTENTICACIÓN + MODO OSCURO */}
+          <div className="flex items-center gap-3">
+            {auth.token ? (
+              <div className="flex items-center gap-2">
+                <span className={`text-sm ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}>
+                  👤 {auth.username}
+                </span>
+                <button
+                  onClick={logout}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
+                    darkMode ? "bg-zinc-800 text-zinc-400 hover:text-red-400" : "bg-zinc-100 text-zinc-500 hover:text-red-500"
+                  }`}
+                >
+                  Salir
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAuth(true)}
+                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
+              >
+                Iniciar sesión
+              </button>
+            )}
+            
+            <button
+              onClick={() => setDarkMode(!darkMode)}
+              className={`rounded-lg p-2 transition-colors ${
+                darkMode ? "text-zinc-400 hover:bg-zinc-800 hover:text-white" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
+              }`}
+            >
+              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
+          </div>
         </header>
 
         {/* MENSAJES */}
@@ -351,6 +581,15 @@ export default function ChatInterface() {
           </p>
         </div>
       </div>
+
+      {/* AUTH MODAL */}
+      {showAuth && (
+        <AuthModal
+          darkMode={darkMode}
+          onClose={() => setShowAuth(false)}
+          onSuccess={handleAuthSuccess}
+        />
+      )}
     </div>
   );
 }
