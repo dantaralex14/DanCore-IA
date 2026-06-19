@@ -1,7 +1,7 @@
 "use client";
 import AuthModal from "./AuthModal";
 import { useState, useRef, useEffect } from "react";
-import { Send, Paperclip, Sun, Moon, ChevronDown, X } from "lucide-react";
+import { Send, Paperclip, Sun, Moon, ChevronDown, X, Plus } from "lucide-react";
 import Sidebar, { Chat } from "./Sidebar";
 import MessageBubble from "./MessageBubble";
 
@@ -20,32 +20,48 @@ interface ChatData {
   pdfName: string | null;
 }
 
-const FILE_BADGES: Record<string, { label: string; color: string }> = {
-  pdf: { label: "PDF", color: "bg-red-500/20 text-red-400 border-red-500/30" },
-  txt: { label: "TXT", color: "bg-blue-500/20 text-blue-400 border-blue-500/30" },
-  csv: { label: "CSV", color: "bg-green-500/20 text-green-400 border-green-500/30" },
-  docx: { label: "DOCX", color: "bg-indigo-500/20 text-indigo-400 border-indigo-500/30" },
-  xlsx: { label: "XLSX", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
-  xls: { label: "XLS", color: "bg-emerald-500/20 text-emerald-400 border-emerald-500/30" },
+const FILE_BADGES: Record<string, { label: string; color: string; bg: string }> = {
+  pdf: { label: "PDF", color: "#f87171", bg: "rgba(248,113,113,0.2)" },
+  txt: { label: "TXT", color: "#60a5fa", bg: "rgba(96,165,250,0.2)" },
+  csv: { label: "CSV", color: "#34d399", bg: "rgba(52,211,153,0.2)" },
+  docx: { label: "DOCX", color: "#818cf8", bg: "rgba(129,140,248,0.2)" },
+  xlsx: { label: "XLSX", color: "#6ee7b7", bg: "rgba(110,231,183,0.2)" },
+  xls: { label: "XLS", color: "#6ee7b7", bg: "rgba(110,231,183,0.2)" },
 };
+
+function getCurrentTime() {
+  return new Date().toLocaleTimeString("es-MX", { 
+    hour: "2-digit", 
+    minute: "2-digit",
+    hour12: true 
+  });
+}
 
 function createNewChat(): ChatData {
   const now = new Date();
+  const currentTime = getCurrentTime();
+  
   return {
     id: now.getTime().toString(),
     title: "Nuevo chat",
-    createdAt: now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+    createdAt: currentTime,
     messages: [{
       role: "model",
-      content: "Hola, soy PersonaCore Assistant. ¿En qué puedo ayudarte hoy? Puedes subir un documento y hacerme preguntas sobre él.",
-      timestamp: now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+      content: `👋 ¡Hola! Soy PersonaCore Assistant.
+
+Puedo ayudarte con:
+• 📄 Subir documentos (PDF, TXT, DOCX, XLSX, CSV)
+• ❓ Responder preguntas sobre su contenido
+• 💡 Resumir información y extraer datos clave
+
+Para empezar: Sube un archivo o escríbeme directamente.`,
+      timestamp: currentTime,
     }],
     pdfText: null,
     pdfName: null,
   };
 }
 
-// Estado inicial para SSR - sin acceso a window
 const getInitialChats = (): ChatData[] => {
   return [createNewChat()];
 };
@@ -54,6 +70,324 @@ const getInitialActiveChatId = (): string => {
   return "";
 };
 
+// ============================================================
+// ESTILOS INLINE
+// ============================================================
+const styles = {
+  container: (dark: boolean) => ({
+    display: "flex",
+    height: "100vh",
+    overflow: "hidden",
+    backgroundColor: dark ? "#18181b" : "#fafafa",
+    color: dark ? "#ffffff" : "#18181b",
+    fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+  }),
+  mainContent: {
+    display: "flex",
+    flex: 1,
+    flexDirection: "column" as const,
+    overflow: "hidden",
+    position: "relative" as const,
+  },
+  header: (dark: boolean) => ({
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: "12px 20px",
+    borderBottom: `1px solid ${dark ? "#27272a" : "#e4e4e7"}`,
+    backgroundColor: dark ? "rgba(24,24,27,0.8)" : "rgba(255,255,255,0.8)",
+    backdropFilter: "blur(8px)",
+  }),
+  headerLeft: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    minWidth: 0,
+  },
+  newChatBtn: (dark: boolean) => ({
+    padding: "6px",
+    borderRadius: "8px",
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    color: dark ? "#a1a1aa" : "#52525b",
+    transition: "background 0.2s",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  }),
+  chatTitle: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    minWidth: 0,
+  },
+  chatTitleH1: (dark: boolean) => ({
+    fontWeight: 600,
+    fontSize: "1rem",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+    margin: 0,
+    color: dark ? "#ffffff" : "#18181b",
+  }),
+  fileBadge: (color: string, bg: string) => ({
+    display: "inline-block",
+    padding: "2px 8px",
+    borderRadius: "9999px",
+    fontSize: "0.75rem",
+    fontWeight: 500,
+    border: `1px solid ${color}`,
+    flexShrink: 0,
+    color: color,
+    background: bg,
+  }),
+  headerRight: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+  },
+  themeToggle: (dark: boolean) => ({
+    padding: "8px",
+    borderRadius: "8px",
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    color: dark ? "#a1a1aa" : "#52525b",
+    transition: "background 0.2s",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  }),
+  userInfo: {
+    display: "flex",
+    alignItems: "center",
+    gap: "4px",
+  },
+  userInfoSpan: (dark: boolean) => ({
+    fontSize: "0.875rem",
+    color: dark ? "#a1a1aa" : "#52525b",
+  }),
+  logoutBtn: (dark: boolean) => ({
+    padding: "4px 8px",
+    borderRadius: "8px",
+    border: "none",
+    background: "transparent",
+    fontSize: "0.75rem",
+    cursor: "pointer",
+    color: dark ? "#a1a1aa" : "#52525b",
+    transition: "color 0.2s",
+  }),
+  loginBtn: {
+    padding: "6px 12px",
+    borderRadius: "8px",
+    border: "none",
+    background: "#6366f1",
+    color: "white",
+    fontSize: "0.75rem",
+    fontWeight: 600,
+    cursor: "pointer",
+    transition: "background 0.2s",
+  },
+  messagesArea: (dark: boolean, dragging: boolean) => ({
+    flex: 1,
+    overflowY: "auto" as const,
+    padding: "24px 20px",
+    transition: "all 0.2s",
+    background: dragging 
+      ? "rgba(99,102,241,0.05)" 
+      : dark 
+        ? "radial-gradient(ellipse at top, rgba(99,102,241,0.05) 0%, transparent 60%)"
+        : "radial-gradient(ellipse at top, rgba(99,102,241,0.03) 0%, transparent 60%)",
+    border: dragging ? "2px dashed #6366f1" : "none",
+    position: "relative" as const,
+  }),
+  suggestions: {
+    marginLeft: "48px",
+    marginTop: "8px",
+  },
+  suggestionsLabel: (dark: boolean) => ({
+    fontSize: "0.75rem",
+    marginBottom: "8px",
+    color: dark ? "#71717a" : "#a1a1aa",
+  }),
+  suggestionsButtons: {
+    display: "flex",
+    flexWrap: "wrap" as const,
+    gap: "8px",
+  },
+  suggestionBtn: (dark: boolean) => ({
+    padding: "6px 16px",
+    borderRadius: "9999px",
+    border: `1px solid ${dark ? "#3f3f46" : "#e4e4e7"}`,
+    fontSize: "0.875rem",
+    background: dark ? "rgba(63,63,70,0.5)" : "#fafafa",
+    color: dark ? "#d4d4d8" : "#3f3f46",
+    cursor: "pointer",
+    transition: "all 0.2s",
+  }),
+  loadingMessage: {
+    display: "flex",
+    gap: "12px",
+    animation: "fadeIn 0.3s ease-in-out",
+  },
+  avatarAI: {
+    display: "flex",
+    height: "32px",
+    width: "32px",
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: "9999px",
+    fontSize: "0.75rem",
+    fontWeight: 700,
+    color: "white",
+    background: "linear-gradient(to bottom right, #7c3aed, #4f46e5)",
+  },
+  loadingDots: (dark: boolean) => ({
+    display: "flex",
+    gap: "4px",
+    alignItems: "center",
+    padding: "12px 16px",
+    borderRadius: "16px 16px 4px 16px",
+    height: "48px",
+    background: dark ? "rgba(39,39,42,0.8)" : "rgba(255,255,255,0.8)",
+    border: `1px solid ${dark ? "rgba(63,63,70,0.5)" : "#e4e4e7"}`,
+  }),
+  loadingDot: {
+    width: "8px",
+    height: "8px",
+    borderRadius: "9999px",
+    background: "#818cf8",
+    animation: "bounce 1.4s infinite both",
+  },
+  scrollBtn: {
+    position: "absolute" as const,
+    bottom: "100px",
+    right: "32px",
+    borderRadius: "9999px",
+    background: "#6366f1",
+    padding: "8px",
+    color: "white",
+    border: "none",
+    boxShadow: "0 10px 15px -3px rgba(0,0,0,0.1)",
+    cursor: "pointer",
+    transition: "background 0.2s",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inputArea: (dark: boolean) => ({
+    borderTop: `1px solid ${dark ? "#27272a" : "#e4e4e7"}`,
+    padding: "12px 20px",
+    background: dark ? "rgba(24,24,27,0.8)" : "rgba(255,255,255,0.8)",
+    backdropFilter: "blur(8px)",
+  }),
+  fileBadgeContainer: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    padding: "6px 12px",
+    marginBottom: "8px",
+    borderRadius: "8px",
+    background: "rgba(99,102,241,0.05)",
+    border: "1px solid rgba(99,102,241,0.2)",
+  },
+  fileName: (dark: boolean) => ({
+    fontSize: "0.875rem",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
+    flex: 1,
+    color: dark ? "#d4d4d8" : "#3f3f46",
+  }),
+  removeFile: {
+    background: "transparent",
+    border: "none",
+    color: "#71717a",
+    cursor: "pointer",
+    padding: "4px",
+    transition: "color 0.2s",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  inputWrapper: (dark: boolean) => ({
+    display: "flex",
+    alignItems: "flex-end",
+    gap: "8px",
+    borderRadius: "16px",
+    border: `1px solid ${dark ? "#3f3f46" : "#e4e4e7"}`,
+    padding: "8px 12px",
+    background: dark ? "rgba(39,39,42,0.5)" : "#ffffff",
+  }),
+  attachBtn: (dark: boolean) => ({
+    padding: "6px",
+    borderRadius: "8px",
+    border: "none",
+    background: "transparent",
+    cursor: "pointer",
+    color: dark ? "#a1a1aa" : "#a1a1aa",
+    transition: "all 0.2s",
+    flexShrink: 0,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  }),
+  textarea: (dark: boolean) => ({
+    flex: 1,
+    resize: "none" as const,
+    background: "transparent",
+    border: "none",
+    outline: "none",
+    fontSize: "0.875rem",
+    color: dark ? "#ffffff" : "#18181b",
+    padding: 0,
+    minHeight: "24px",
+    maxHeight: "120px",
+    fontFamily: "inherit",
+  }),
+  inputActions: {
+    display: "flex",
+    alignItems: "center",
+    gap: "8px",
+    flexShrink: 0,
+  },
+  charCounter: (dark: boolean) => ({
+    fontSize: "0.75rem",
+    color: dark ? "#71717a" : "#a1a1aa",
+  }),
+  sendBtn: (active: boolean) => ({
+    padding: "8px",
+    borderRadius: "12px",
+    border: "none",
+    background: active ? "#6366f1" : "#52525b",
+    color: "white",
+    cursor: active ? "pointer" : "not-allowed",
+    opacity: active ? 1 : 0.4,
+    transition: "all 0.2s",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+  }),
+  footerNote: (dark: boolean) => ({
+    marginTop: "6px",
+    textAlign: "center" as const,
+    fontSize: "0.75rem",
+    color: dark ? "#52525b" : "#a1a1aa",
+  }),
+  loading: {
+    display: "flex",
+    height: "100vh",
+    alignItems: "center",
+    justifyContent: "center",
+    color: "#a1a1aa",
+  },
+};
+
+// ============================================================
+// COMPONENTE PRINCIPAL
+// ============================================================
 export default function ChatInterface() {
   const [darkMode, setDarkMode] = useState(true);
   const [chats, setChats] = useState<ChatData[]>(getInitialChats);
@@ -65,8 +399,8 @@ export default function ChatInterface() {
   const [showScrollBtn, setShowScrollBtn] = useState(false);
   const [showAuth, setShowAuth] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   
-  // Estado unificado de autenticación - inicializado sin acceso a window
   const [auth, setAuth] = useState<{ token: string | null; username: string | null }>({
     token: null,
     username: null
@@ -79,11 +413,9 @@ export default function ChatInterface() {
 
   const activeChat = chats.find((c) => c.id === activeChatId) || chats[0];
 
-  // Cargar datos desde localStorage solo en el cliente
   useEffect(() => {
     setIsMounted(true);
     
-    // Cargar chats
     const savedChats = localStorage.getItem("personacore-chats");
     if (savedChats) {
       try {
@@ -97,7 +429,6 @@ export default function ChatInterface() {
       }
     }
 
-    // Cargar autenticación
     const token = localStorage.getItem("dancore-token");
     const username = localStorage.getItem("dancore-username");
     if (token && username) {
@@ -105,28 +436,24 @@ export default function ChatInterface() {
     }
   }, []);
 
-  // Guardar en localStorage cuando cambien los chats
   useEffect(() => {
     if (isMounted) {
       localStorage.setItem("personacore-chats", JSON.stringify(chats));
     }
   }, [chats, isMounted]);
 
-  // Cargar chats del backend si hay sesión activa
   useEffect(() => {
     if (auth.token) {
       loadChatsFromBackend(auth.token);
     }
   }, [auth.token]);
 
-  // Scroll automático
   useEffect(() => {
     if (isMounted) {
       bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [activeChat?.messages, loading, isMounted]);
 
-  // Detectar scroll para mostrar botón
   function handleScroll() {
     const el = chatBoxRef.current;
     if (!el) return;
@@ -159,7 +486,7 @@ export default function ChatInterface() {
         const chat: ChatData = {
           id: data.id.toString(),
           title: data.title,
-          createdAt: new Date(data.created_at).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+          createdAt: getCurrentTime(),
           messages: [createNewChat().messages[0]],
           pdfText: null,
           pdfName: null,
@@ -196,7 +523,6 @@ export default function ChatInterface() {
     }
   }
 
-  // Función para cargar chats desde el backend
   async function loadChatsFromBackend(authToken: string) {
     try {
       const res = await fetch(`${API_BACKEND}/api/chats/`, {
@@ -237,41 +563,39 @@ export default function ChatInterface() {
     }
   }
 
-  // Funciones de autenticación
   async function handleAuthSuccess(token: string, username: string) {
-  setAuth({ token, username });
-  localStorage.setItem("dancore-token", token);
-  localStorage.setItem("dancore-username", username);
-  setShowAuth(false);
+    setAuth({ token, username });
+    localStorage.setItem("dancore-token", token);
+    localStorage.setItem("dancore-username", username);
+    setShowAuth(false);
 
-  // Si el chat activo tiene mensajes reales (más de solo el saludo), migrarlo
-  const currentChat = chats.find((c) => c.id === activeChatId);
-  const hasRealContent = currentChat && currentChat.messages.length > 1;
+    const currentChat = chats.find((c) => c.id === activeChatId);
+    const hasRealContent = currentChat && currentChat.messages.length > 1;
 
-  if (hasRealContent) {
-    try {
-      const res = await fetch(`${API_BACKEND}/api/chats/`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ title: currentChat.title }),
-      });
-      const data = await res.json();
-      const newChatId = data.id.toString();
-
-      for (const msg of currentChat.messages) {
-        await fetch(`${API_BACKEND}/api/chats/${newChatId}/messages`, {
+    if (hasRealContent) {
+      try {
+        const res = await fetch(`${API_BACKEND}/api/chats/`, {
           method: "POST",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ role: msg.role === "model" ? "assistant" : "user", content: msg.content }),
+          body: JSON.stringify({ title: currentChat.title }),
         });
-      }
-    } catch (err) {
-      console.error("Error migrando chat:", err);
-    }
-  }
+        const data = await res.json();
+        const newChatId = data.id.toString();
 
-  loadChatsFromBackend(token);
-}
+        for (const msg of currentChat.messages) {
+          await fetch(`${API_BACKEND}/api/chats/${newChatId}/messages`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ role: msg.role === "model" ? "assistant" : "user", content: msg.content }),
+          });
+        }
+      } catch (err) {
+        console.error("Error migrando chat:", err);
+      }
+    }
+
+    loadChatsFromBackend(token);
+  }
 
   function logout() {
     setAuth({ token: null, username: null });
@@ -281,6 +605,30 @@ export default function ChatInterface() {
     setChats([fresh]);
     setActiveChatId(fresh.id);
   }
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      const dataTransfer = new DataTransfer();
+      dataTransfer.items.add(file);
+      if (fileRef.current) {
+        fileRef.current.files = dataTransfer.files;
+        fileRef.current.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+    }
+  };
 
   async function handleFile(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -303,7 +651,7 @@ export default function ChatInterface() {
         const welcomeMsg: Message = {
           role: "model",
           content: `✅ Archivo cargado: **${data.filename}**. Ahora puedes hacerme preguntas sobre su contenido.`,
-          timestamp: now.toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+          timestamp: getCurrentTime(),
         };
         updateActiveChat({
           pdfText: data.text,
@@ -327,7 +675,7 @@ export default function ChatInterface() {
     const msg: Message = {
       role,
       content,
-      timestamp: new Date().toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit" }),
+      timestamp: getCurrentTime(),
     };
     setChats((prev) =>
       prev.map((c) =>
@@ -353,7 +701,6 @@ export default function ChatInterface() {
     setInput("");
     setLoading(true);
 
-    // Actualizar título del chat con el primer mensaje
     if (activeChat.messages.length <= 1) {
       updateActiveChat({ title: text.slice(0, 30) });
     }
@@ -401,20 +748,18 @@ export default function ChatInterface() {
 
   const badge = fileType ? FILE_BADGES[fileType] : null;
 
-  // Evitar la hidratación mostrando un placeholder o nada durante el SSR
+  const handleQuickSuggestion = (text: string) => {
+    setInput(text);
+    const textarea = document.querySelector('textarea');
+    if (textarea) textarea.focus();
+  };
+
   if (!isMounted) {
-    return (
-      <div className={`flex h-screen overflow-hidden ${darkMode ? "bg-zinc-900" : "bg-zinc-50"}`}>
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-zinc-400">Cargando...</div>
-        </div>
-      </div>
-    );
+    return <div style={styles.loading}>Cargando...</div>;
   }
 
   return (
-    <div className={`flex h-screen overflow-hidden ${darkMode ? "bg-zinc-900" : "bg-zinc-50"}`}>
-      {/* SIDEBAR */}
+    <div style={styles.container(darkMode)}>
       <Sidebar
         chats={chats.map((c): Chat => ({ id: c.id, title: c.title, createdAt: c.createdAt }))}
         activeChatId={activeChatId}
@@ -424,80 +769,90 @@ export default function ChatInterface() {
         darkMode={darkMode}
       />
 
-      {/* MAIN */}
-      <div className="flex flex-1 flex-col overflow-hidden">
+      <div style={styles.mainContent}>
         {/* HEADER */}
-        <header className={`flex items-center justify-between border-b px-6 py-4 ${
-          darkMode ? "border-zinc-800 bg-zinc-950/80 backdrop-blur-sm" : "border-zinc-200 bg-white/80 backdrop-blur-sm"
-        }`}>
-          <div className="flex items-center gap-3">
-            <h1 className={`font-semibold ${darkMode ? "text-white" : "text-zinc-900"}`}>
-              {activeChat?.title || "Nuevo chat"}
-            </h1>
-            {badge && activeChat?.pdfName && (
-              <div className="flex items-center gap-2">
-                <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${badge.color}`}>
+        <header style={styles.header(darkMode)}>
+          <div style={styles.headerLeft}>
+            <button 
+              style={styles.newChatBtn(darkMode)}
+              onClick={newChat}
+              title="Nuevo chat"
+              onMouseEnter={(e) => {
+                if (darkMode) e.currentTarget.style.background = "#27272a";
+                else e.currentTarget.style.background = "#f4f4f5";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              <Plus size={18} />
+            </button>
+            <div style={styles.chatTitle}>
+              <h1 style={styles.chatTitleH1(darkMode)}>
+                {activeChat?.title || "Nuevo chat"}
+              </h1>
+              {badge && activeChat?.pdfName && (
+                <span style={styles.fileBadge(badge.color, badge.bg)}>
                   {badge.label}
                 </span>
-                <span className={`text-xs truncate max-w-[200px] ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}>
-                  {activeChat.pdfName}
-                </span>
-                <button
-                  onClick={() => { updateActiveChat({ pdfText: null, pdfName: null }); setFileType(null); }}
-                  className="text-zinc-500 hover:text-red-400 transition-colors"
-                >
-                  <X size={14} />
-                </button>
-              </div>
-            )}
+              )}
+            </div>
           </div>
-          
-          {/* AUTENTICACIÓN + MODO OSCURO */}
-          <div className="flex items-center gap-3">
+          <div style={styles.headerRight}>
+            <button 
+              style={styles.themeToggle(darkMode)}
+              onClick={() => setDarkMode(!darkMode)}
+              onMouseEnter={(e) => {
+                if (darkMode) e.currentTarget.style.background = "#27272a";
+                else e.currentTarget.style.background = "#f4f4f5";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+              }}
+            >
+              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
+            </button>
             {auth.token ? (
-              <div className="flex items-center gap-2">
-                <span className={`text-sm ${darkMode ? "text-zinc-400" : "text-zinc-500"}`}>
-                  👤 {auth.username}
-                </span>
-                <button
+              <div style={styles.userInfo}>
+                <span style={styles.userInfoSpan(darkMode)}>{auth.username}</span>
+                <button 
+                  style={styles.logoutBtn(darkMode)}
                   onClick={logout}
-                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                    darkMode ? "bg-zinc-800 text-zinc-400 hover:text-red-400" : "bg-zinc-100 text-zinc-500 hover:text-red-500"
-                  }`}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.color = "#f87171";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.color = darkMode ? "#a1a1aa" : "#52525b";
+                  }}
                 >
                   Salir
                 </button>
               </div>
             ) : (
-              <button
+              <button 
+                style={styles.loginBtn}
                 onClick={() => setShowAuth(true)}
-                className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.background = "#4f46e5";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.background = "#6366f1";
+                }}
               >
                 Iniciar sesión
               </button>
             )}
-            
-            <button
-              onClick={() => setDarkMode(!darkMode)}
-              className={`rounded-lg p-2 transition-colors ${
-                darkMode ? "text-zinc-400 hover:bg-zinc-800 hover:text-white" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-900"
-              }`}
-            >
-              {darkMode ? <Sun size={18} /> : <Moon size={18} />}
-            </button>
           </div>
         </header>
 
-        {/* MENSAJES */}
+        {/* MESSAGES AREA */}
         <div
           ref={chatBoxRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto px-6 py-6 space-y-6"
-          style={{
-            background: darkMode
-              ? "radial-gradient(ellipse at top, rgba(99,102,241,0.05) 0%, transparent 60%)"
-              : "radial-gradient(ellipse at top, rgba(99,102,241,0.03) 0%, transparent 60%)",
-          }}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          style={styles.messagesArea(darkMode, isDragging)}
         >
           {activeChat?.messages.map((msg, i) => (
             <MessageBubble
@@ -508,81 +863,195 @@ export default function ChatInterface() {
               darkMode={darkMode}
             />
           ))}
-          {loading && (
-            <div className="flex gap-3">
-              <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-violet-600 to-indigo-600 text-white text-xs font-bold">
-                AI
+          
+          {/* SUGGESTIONS */}
+          {activeChat?.messages.length === 1 && 
+           activeChat.messages[0].role === "model" && 
+           !activeChat.pdfName && (
+            <div style={styles.suggestions}>
+              <p style={styles.suggestionsLabel(darkMode)}>💡 Prueba preguntando:</p>
+              <div style={styles.suggestionsButtons}>
+                <button 
+                  style={styles.suggestionBtn(darkMode)}
+                  onClick={() => handleQuickSuggestion("¿Qué puedes hacer?")}
+                  onMouseEnter={(e) => {
+                    if (darkMode) e.currentTarget.style.background = "#3f3f46";
+                    else e.currentTarget.style.background = "#f4f4f5";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (darkMode) e.currentTarget.style.background = "rgba(63,63,70,0.5)";
+                    else e.currentTarget.style.background = "#fafafa";
+                  }}
+                >
+                  🚀 ¿Qué puedes hacer?
+                </button>
+                <button 
+                  style={styles.suggestionBtn(darkMode)}
+                  onClick={() => handleQuickSuggestion("¿Cómo subo un documento?")}
+                  onMouseEnter={(e) => {
+                    if (darkMode) e.currentTarget.style.background = "#3f3f46";
+                    else e.currentTarget.style.background = "#f4f4f5";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (darkMode) e.currentTarget.style.background = "rgba(63,63,70,0.5)";
+                    else e.currentTarget.style.background = "#fafafa";
+                  }}
+                >
+                  📄 ¿Cómo subo un documento?
+                </button>
+                <button 
+                  style={styles.suggestionBtn(darkMode)}
+                  onClick={() => handleQuickSuggestion("Cuéntame sobre ti")}
+                  onMouseEnter={(e) => {
+                    if (darkMode) e.currentTarget.style.background = "#3f3f46";
+                    else e.currentTarget.style.background = "#f4f4f5";
+                  }}
+                  onMouseLeave={(e) => {
+                    if (darkMode) e.currentTarget.style.background = "rgba(63,63,70,0.5)";
+                    else e.currentTarget.style.background = "#fafafa";
+                  }}
+                >
+                  💡 Cuéntame sobre ti
+                </button>
               </div>
-              <div className={`rounded-2xl rounded-tl-sm px-4 py-3 ${darkMode ? "bg-zinc-800/80 border border-zinc-700/50" : "bg-white/80 border border-zinc-200"}`}>
-                <div className="flex gap-1 items-center h-5">
-                  {[0, 1, 2].map((i) => (
-                    <div key={i} className="h-2 w-2 rounded-full bg-indigo-400 animate-bounce"
-                      style={{ animationDelay: `${i * 0.15}s` }} />
-                  ))}
-                </div>
+            </div>
+          )}
+          
+          {/* LOADING INDICATOR */}
+          {loading && (
+            <div style={styles.loadingMessage}>
+              <div style={styles.avatarAI}>AI</div>
+              <div style={styles.loadingDots(darkMode)}>
+                <span style={{...styles.loadingDot, animationDelay: "0s"}}></span>
+                <span style={{...styles.loadingDot, animationDelay: "0.15s"}}></span>
+                <span style={{...styles.loadingDot, animationDelay: "0.3s"}}></span>
               </div>
             </div>
           )}
           <div ref={bottomRef} />
         </div>
 
-        {/* SCROLL TO BOTTOM */}
+        {/* SCROLL BUTTON */}
         {showScrollBtn && (
           <button
+            style={styles.scrollBtn}
             onClick={() => bottomRef.current?.scrollIntoView({ behavior: "smooth" })}
-            className="absolute bottom-24 right-8 rounded-full bg-indigo-600 p-2 text-white shadow-lg hover:bg-indigo-700 transition-colors"
+            onMouseEnter={(e) => {
+              e.currentTarget.style.background = "#4f46e5";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = "#6366f1";
+            }}
           >
             <ChevronDown size={18} />
           </button>
         )}
 
-        {/* INPUT */}
-        <div className={`border-t px-6 py-4 ${darkMode ? "border-zinc-800 bg-zinc-950/80 backdrop-blur-sm" : "border-zinc-200 bg-white/80 backdrop-blur-sm"}`}>
-          <div className={`flex items-end gap-3 rounded-2xl border px-4 py-3 ${
-            darkMode ? "border-zinc-700 bg-zinc-800/50" : "border-zinc-200 bg-white"
-          }`}>
+        {/* INPUT AREA */}
+        <div style={styles.inputArea(darkMode)}>
+          {/* FILE BADGE */}
+          {activeChat?.pdfName && (
+            <div style={styles.fileBadgeContainer}>
+              <span style={styles.fileBadge(badge!.color, badge!.bg)}>
+                {badge!.label}
+              </span>
+              <span style={styles.fileName(darkMode)}>
+                📄 {activeChat.pdfName}
+              </span>
+              <button
+                style={styles.removeFile}
+                onClick={() => { updateActiveChat({ pdfText: null, pdfName: null }); setFileType(null); }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = "#f87171";
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "#71717a";
+                }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+          
+          <div style={styles.inputWrapper(darkMode)}>
             <button
+              style={styles.attachBtn(darkMode)}
               onClick={() => fileRef.current?.click()}
               disabled={uploading}
-              className={`flex-shrink-0 rounded-lg p-1.5 transition-colors ${
-                darkMode ? "text-zinc-400 hover:bg-zinc-700 hover:text-white" : "text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700"
-              } disabled:opacity-50`}
-              title="Adjuntar archivo"
+              onMouseEnter={(e) => {
+                if (darkMode) e.currentTarget.style.background = "#3f3f46";
+                else e.currentTarget.style.background = "#f4f4f5";
+                e.currentTarget.style.color = darkMode ? "#ffffff" : "#3f3f46";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.color = darkMode ? "#a1a1aa" : "#a1a1aa";
+              }}
             >
               {uploading ? (
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-indigo-400 border-t-transparent" />
+                <div style={{
+                  width: "20px",
+                  height: "20px",
+                  border: "2px solid #818cf8",
+                  borderTopColor: "transparent",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }} />
               ) : (
                 <Paperclip size={20} />
               )}
             </button>
-            <input ref={fileRef} type="file" accept=".pdf,.txt,.docx,.xlsx,.xls,.csv" onChange={handleFile} className="hidden" />
+            <input ref={fileRef} type="file" accept=".pdf,.txt,.docx,.xlsx,.xls,.csv" onChange={handleFile} style={{ display: "none" }} />
             <textarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val.length <= 2000) setInput(val);
+              }}
               onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); } }}
-              placeholder={activeChat?.pdfName ? "Pregunta sobre el documento..." : "Escribe un mensaje... (Enter para enviar, Shift+Enter para nueva línea)"}
+              placeholder={activeChat?.pdfName ? "Pregunta sobre el documento..." : "Escribe tu mensaje..."}
               rows={1}
-              className={`flex-1 resize-none bg-transparent text-sm outline-none ${
-                darkMode ? "text-white placeholder:text-zinc-500" : "text-zinc-900 placeholder:text-zinc-400"
-              }`}
-              style={{ maxHeight: "120px" }}
+              style={styles.textarea(darkMode)}
               disabled={loading}
             />
-            <button
-              onClick={sendMessage}
-              disabled={loading || !input.trim()}
-              className="flex-shrink-0 rounded-xl bg-indigo-600 p-2 text-white transition-colors hover:bg-indigo-700 disabled:opacity-40"
-            >
-              <Send size={18} />
-            </button>
+            <div style={styles.inputActions}>
+              <span style={styles.charCounter(darkMode)}>{input.length}/2000</span>
+              <button
+                onClick={sendMessage}
+                disabled={loading || !input.trim()}
+                style={styles.sendBtn(!loading && !!input.trim())}
+                onMouseEnter={(e) => {
+                  if (!loading && input.trim()) {
+                    e.currentTarget.style.background = "#4f46e5";
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!loading && input.trim()) {
+                    e.currentTarget.style.background = "#6366f1";
+                  }
+                }}
+              >
+                {loading ? (
+                  <div style={{
+                    width: "18px",
+                    height: "18px",
+                    border: "2px solid white",
+                    borderTopColor: "transparent",
+                    borderRadius: "50%",
+                    animation: "spin 0.8s linear infinite",
+                  }} />
+                ) : (
+                  <Send size={18} />
+                )}
+              </button>
+            </div>
           </div>
-          <p className={`mt-2 text-center text-xs ${darkMode ? "text-zinc-600" : "text-zinc-400"}`}>
+          <p style={styles.footerNote(darkMode)}>
             PersonaCore AI puede cometer errores. Verifica información importante.
           </p>
         </div>
       </div>
 
-      {/* AUTH MODAL */}
       {showAuth && (
         <AuthModal
           darkMode={darkMode}
@@ -590,6 +1059,47 @@ export default function ChatInterface() {
           onSuccess={handleAuthSuccess}
         />
       )}
+
+      {/* ANIMACIONES GLOBALES (inline) */}
+      <style>{`
+        @keyframes bounce {
+          0%, 80%, 100% { transform: scale(0); }
+          40% { transform: scale(1); }
+        }
+        @keyframes spin {
+          to { transform: rotate(360deg); }
+        }
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(10px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        .message-bubble {
+          animation: fadeIn 0.3s ease-in-out;
+        }
+        textarea::-webkit-scrollbar {
+          width: 4px;
+        }
+        textarea::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        textarea::-webkit-scrollbar-thumb {
+          background: rgba(99, 102, 241, 0.3);
+          border-radius: 10px;
+        }
+        div::-webkit-scrollbar {
+          width: 6px;
+        }
+        div::-webkit-scrollbar-track {
+          background: transparent;
+        }
+        div::-webkit-scrollbar-thumb {
+          background: ${darkMode ? "rgba(255,255,255,0.1)" : "rgba(0,0,0,0.1)"};
+          border-radius: 10px;
+        }
+        div::-webkit-scrollbar-thumb:hover {
+          background: ${darkMode ? "rgba(255,255,255,0.2)" : "rgba(0,0,0,0.2)"};
+        }
+      `}</style>
     </div>
   );
 }
